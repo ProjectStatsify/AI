@@ -1,12 +1,12 @@
-import defaultPuppeteer from "puppeteer";
-import { addExtra } from "puppeteer-extra";
+//import defaultPuppeteer from "puppeteer";
+import puppeteer from "puppeteer-extra";
 import stealth from "puppeteer-extra-plugin-stealth";
 import useragent from "puppeteer-extra-plugin-anonymize-ua";
 import { createParser } from 'eventsource-parser';
 import express from "express";
 import qs from "querystring";
 
-const puppeteer = addExtra(defaultPuppeteer);
+//const puppeteer = addExtra(defaultPuppeteer);
 puppeteer.use(stealth());
 puppeteer.use(useragent());
 
