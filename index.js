@@ -27,12 +27,49 @@ if (process.env.PUPPETEER_PROXY)
 let browser = await puppeteer.launch(options);
 console.log("BROWSER: Process launched");
 
-const BASE_URL = "https://you.com/api/streamingSearch";
+const API_BASE_URL = "https://you.com/api/streamingSearch";
+const BASE_URL = "https://you.com/chat";
+
+const traceIdMap = new Map();
+const fetchQueryTraceToken = async (traceId) => {
+    const existingQueryTraceId = traceIdMap.get(traceId);
+    if (existingQueryTraceId) return existingQueryTraceId;
+    else {
+        return new Promise(async (resolve, reject) => {
+            const page = await browser.newPage();
+            await page.setRequestInterception(true);
+
+            page.on("request", async (interceptedRequest) => {
+                if (interceptedRequest.url().startsWith(API_BASE_URL)) {
+                    const traceToken = new URL(interceptedRequest.url()).searchParams.get("queryTraceId");
+                    traceIdMap.set(traceId, traceToken);
+                    resolve(traceToken);
+                    await page.close();
+                }
+                else await interceptedRequest.continue();
+            });
+
+            page.on("close", () => {
+                reject("No trace token found")
+            });
+            await page.goto(BASE_URL);
+
+        })
+    }
+}
 
 app.all("/chat", async (req, res) => {
     const query = req.body?.q ?? req.query.q;
     const stream = req.body?.stream ?? req.query.stream ?? false;
-    if (!query) return res.status(404).send({ status: false, message: "Invalid request payload" });
+    const traceId = req.body?.traceId ?? req.query.traceId ?? null;
+    const metadata = req.body?.metadata ?? req.query.metadata ?? null;
+    if (!query || !traceId) return res.status(404).send({ status: false, message: "Invalid request payload" });
+
+    const traceToken = await fetchQueryTraceToken(traceId).catch((e) => {
+        console.log(e)
+        return null;
+    });
+    if (!traceToken) return res.status(404).send({ status: false, message: "Unable to fetch query trace token" });
 
     const vars = {
         page: 1,
@@ -41,14 +78,16 @@ app.all("/chat", async (req, res) => {
         onShoppingPage: false,
         responseFilter: ["WebPages", "Translations", "TimeZone", "Computation", "RelatedSearches"],
         domain: "youchat",
-        q: query
+        q: query,
+        queryTraceId : traceToken,
+        chatId : traceToken
     };
 
-    const reqURL = `${BASE_URL}?${qs.stringify(vars)}`;
+    const reqURL = `${API_BASE_URL}?${qs.stringify(vars)}`;
 
     try {
         const page = await browser.newPage();
-        await page.goto(reqURL);
+        await page.goto(reqURL, { referer: "https://you.com" });
 
         const pageContent = await page.evaluate(() => document.body.textContent);
 
@@ -56,10 +95,12 @@ app.all("/chat", async (req, res) => {
             error: false,
             content: "",
             intents: null,
-            requestOptions: vars
-
+            trace: {
+                id: traceId,
+                token: traceToken
+            }
         };
-        
+
         let contentStream = [];
         const parser = createParser((stream) => {
             if (stream.type === 'event') {
@@ -80,6 +121,8 @@ app.all("/chat", async (req, res) => {
         parser.reset();
 
         await page.close();
+
+        if(metadata) data.metaData = vars;
         res.send({
             status: !data.error, data: {
                 ...data,
@@ -95,7 +138,6 @@ app.all("/chat", async (req, res) => {
     }
 
 });
-
 
 app.listen(3000, () => {
     console.log("API: Loaded")
