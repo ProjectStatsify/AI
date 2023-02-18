@@ -4,11 +4,14 @@ import useragent from "puppeteer-extra-plugin-anonymize-ua";
 import { createParser } from 'eventsource-parser';
 import express from "express";
 import qs from "querystring";
+import StableHorde from "@zeldafan0225/stable_horde";
+import expressWs from "express-ws";
 
 puppeteer.use(stealth());
 puppeteer.use(useragent());
 
 const app = express();
+expressWs(app);
 app.get("/", (req, res) => res.status(200).send("OK"));
 
 let options = {
@@ -137,6 +140,56 @@ app.all("/chat", async (req, res) => {
         browser = await puppeteer.launch(options);
     }
 
+});
+
+const artClient = new StableHorde({
+    cache_interval: 1000 * 10,
+    cache: {
+        generations_check: 1000 * 30,
+    },
+    client_agent: "Statsify:v0.0.1:mail@statsify.ga",
+    default_token: "7AyFLyrYao9s1FCPH7nj1A"
+});
+
+
+app.all("/art/generate", async (req, res) => {
+    const prompt = req.body?.q ?? req.query.q;
+    if (!prompt) return res.status(404).send({ status: false, message: "Invalid request payload" });
+
+    const data = await artClient.postAsyncGenerate({
+        prompt,
+        ...req.body
+    });
+
+    res.send({
+        status: data.id ? true : false, data: {
+            ...data,
+            ws: `art/ws/${data.id}`
+        }
+    });
+});
+
+app.get("/art/:id", async (req, res) => {
+    const { id } = req.params;
+    const data = await artClient.getGenerationStatus(id).catch(() => null);
+    if (data) res.send({ status: true, data })
+    else res.send({ status: false, message: "No found" })
+});
+
+app.ws(`/art/ws/:id`, async (ws, req) => {
+    const { id } = req.params;
+    const check = await artClient.getGenerationCheck(id).catch(() => null);
+    if (!check) return ws.close();
+    send(ws);
+    const checkStatus = setInterval(() => send(ws), 1000 * 10);
+    async function send(ws) {
+        const status = await artClient.getGenerationStatus(id).catch(() => null);
+        ws.send(JSON.stringify({ status: true, data: status }));
+        if (status.done) {
+            clearInterval(checkStatus);
+            ws.close();
+        }
+    }
 });
 
 app.listen(3000, () => {
