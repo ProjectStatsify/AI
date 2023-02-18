@@ -12,6 +12,7 @@ puppeteer.use(useragent());
 
 const app = express();
 expressWs(app);
+app.use(express.json());
 app.get("/", (req, res) => res.status(200).send("OK"));
 
 let options = {
