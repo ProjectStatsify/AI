@@ -145,8 +145,7 @@ app.all("/chat", async (req, res) => {
 
 const artClient = new StableHorde({
     cache_interval: 1000 * 10,
-    client_agent: "Statsify:v0.0.1:mail@statsify.ga",
-    default_token: "7AyFLyrYao9s1FCPH7nj1A"
+    client_agent: "Statsify:v0.0.1:mail@statsify.ga"
 });
 
 
