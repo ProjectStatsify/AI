@@ -145,9 +145,6 @@ app.all("/chat", async (req, res) => {
 
 const artClient = new StableHorde({
     cache_interval: 1000 * 10,
-    cache: {
-        generations_check: 1000 * 30,
-    },
     client_agent: "Statsify:v0.0.1:mail@statsify.ga",
     default_token: "7AyFLyrYao9s1FCPH7nj1A"
 });
@@ -159,6 +156,7 @@ app.all("/art/generate", async (req, res) => {
 
     const data = await artClient.postAsyncGenerate({
         prompt,
+        ...req.query,
         ...req.body
     });
 
