@@ -144,8 +144,6 @@ app.all("/chat", async (req, res) => {
 });
 
 const artClient = new StableHorde({
-    cache_interval: 1000 * 10,
-    client_agent: "Statsify:v0.0.1:mail@statsify.ga"
 });
 
 
@@ -155,8 +153,13 @@ app.all("/art/generate", async (req, res) => {
 
     const data = await artClient.postAsyncGenerate({
         prompt,
-        ...req.query,
-        ...req.body
+        ...req.body,
+        params: {
+            post_processing: [
+                "GFPGAN",
+                "RealESRGAN_x4plus"
+            ]
+        }
     });
 
     res.send({
@@ -169,7 +172,7 @@ app.all("/art/generate", async (req, res) => {
 
 app.get("/art/:id", async (req, res) => {
     const { id } = req.params;
-    const data = await artClient.getGenerationStatus(id).catch(() => null);
+    const data = await artClient.getGenerationCheck(id, { force: true }).catch(() => null);
     if (data) res.send({ status: true, data })
     else res.send({ status: false, message: "No found" })
 });
@@ -179,11 +182,14 @@ app.ws(`/art/ws/:id`, async (ws, req) => {
     const check = await artClient.getGenerationCheck(id).catch(() => null);
     if (!check) return ws.close();
     send(ws);
-    const checkStatus = setInterval(() => send(ws), 1000 * 10);
+    const checkStatus = setInterval(() => send(ws), 1000 * 3);
     async function send(ws) {
-        const status = await artClient.getGenerationStatus(id).catch(() => null);
-        ws.send(JSON.stringify({ status: true, data: status }));
+        let status = await artClient.getGenerationCheck(id).catch(() => undefined);
         if (status.done) {
+            status = await artClient.getGenerationStatus(id).catch(() => undefined);
+        }
+        ws.send(JSON.stringify({ status: true, data: status }));
+        if (status?.done) {
             clearInterval(checkStatus);
             ws.close();
         }
