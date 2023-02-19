@@ -153,13 +153,7 @@ app.all("/art/generate", async (req, res) => {
 
     const data = await artClient.postAsyncGenerate({
         prompt,
-        ...req.body,
-        params: {
-            post_processing: [
-                "GFPGAN",
-                "RealESRGAN_x4plus"
-            ]
-        }
+        ...req.body
     });
 
     res.send({
