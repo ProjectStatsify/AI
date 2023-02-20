@@ -144,15 +144,22 @@ app.all("/chat", async (req, res) => {
 });
 
 const artClient = new StableHorde({
+    default_token: "7AyFLyrYao9s1FCPH7nj1A"
 });
 
 
 app.all("/art/generate", async (req, res) => {
-    const prompt = req.body?.q ?? req.query.q;
+    const prompt = req.body?.prompt ?? req.query.prompt;
     if (!prompt) return res.status(404).send({ status: false, message: "Invalid request payload" });
 
     const data = await artClient.postAsyncGenerate({
         prompt,
+        params: {
+            post_processing: [
+                "GFPGAN",
+                "RealESRGAN_x4plus"
+            ]
+        },
         ...req.body
     });
 
@@ -164,7 +171,7 @@ app.all("/art/generate", async (req, res) => {
     });
 });
 
-app.get("/art/:id", async (req, res) => {
+app.get("/art/show/:id", async (req, res) => {
     const { id } = req.params;
     const data = await artClient.getGenerationCheck(id, { force: true }).catch(() => null);
     if (data) res.send({ status: true, data })
@@ -178,9 +185,9 @@ app.ws(`/art/ws/:id`, async (ws, req) => {
     send(ws);
     const checkStatus = setInterval(() => send(ws), 1000 * 3);
     async function send(ws) {
-        let status = await artClient.getGenerationCheck(id).catch(() => undefined);
-        if (status.done) {
-            status = await artClient.getGenerationStatus(id).catch(() => undefined);
+        let status = await artClient.getGenerationCheck(id, { force: true }).catch(() => undefined);
+        if (status?.done) {
+            status = await artClient.getGenerationStatus(id, { force: true }).catch(() => undefined);
         }
         ws.send(JSON.stringify({ status: true, data: status }));
         if (status?.done) {
@@ -188,6 +195,14 @@ app.ws(`/art/ws/:id`, async (ws, req) => {
             ws.close();
         }
     }
+    ws.on("close", () => {
+        if (checkStatus) clearInterval(checkStatus);
+    })
+});
+
+app.get("/art/models", async (req, res) => {
+    const data = await artClient.getModels({ force: true });
+    res.send({ status: true, data })
 });
 
 app.listen(3000, () => {
