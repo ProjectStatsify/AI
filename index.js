@@ -6,13 +6,15 @@ import express from "express";
 import qs from "querystring";
 import StableHorde from "@zeldafan0225/stable_horde";
 import expressWs from "express-ws";
+// import { executablePath } from "puppeteer";
+import axios from "axios";
 
 puppeteer.use(stealth());
 puppeteer.use(useragent());
 
 const app = express();
 expressWs(app);
-app.use(express.json());
+app.use(express.json({ limit: "50mb" }));
 app.get("/", (req, res) => res.status(200).send("OK"));
 
 let options = {
@@ -28,11 +30,11 @@ if (process.env.PUPPETEER_USERDATADIR)
 if (process.env.PUPPETEER_PROXY)
     options.args.push(`--proxy-server=${process.env.PUPPETEER_PROXY}`);
 
-let browser = await puppeteer.launch(options);
+let browser = await puppeteer.launch({ ...options });
 console.log("BROWSER: Process launched");
 
-const API_BASE_URL = "https://you.com/api/streamingSearch";
-const BASE_URL = "https://you.com/chat";
+const YOU_API_YOU_BASE_URL = "https://you.com/api/streamingSearch";
+const YOU_BASE_URL = "https://you.com/chat";
 
 const traceIdMap = new Map();
 const fetchQueryTraceToken = async (traceId) => {
@@ -44,7 +46,7 @@ const fetchQueryTraceToken = async (traceId) => {
             await page.setRequestInterception(true);
 
             page.on("request", async (interceptedRequest) => {
-                if (interceptedRequest.url().startsWith(API_BASE_URL)) {
+                if (interceptedRequest.url().startsWith(YOU_API_YOU_BASE_URL)) {
                     const traceToken = new URL(interceptedRequest.url()).searchParams.get("queryTraceId");
                     traceIdMap.set(traceId, traceToken);
                     resolve(traceToken);
@@ -56,7 +58,7 @@ const fetchQueryTraceToken = async (traceId) => {
             page.on("close", () => {
                 reject("No trace token found")
             });
-            await page.goto(BASE_URL);
+            await page.goto(YOU_BASE_URL);
 
         })
     }
@@ -83,11 +85,11 @@ app.all("/chat", async (req, res) => {
         responseFilter: ["WebPages", "Translations", "TimeZone", "Computation", "RelatedSearches"],
         domain: "youchat",
         q: query,
-        queryTraceId : traceToken,
-        chatId : traceToken
+        queryTraceId: traceToken,
+        chatId: traceToken
     };
 
-    const reqURL = `${API_BASE_URL}?${qs.stringify(vars)}`;
+    const reqURL = `${YOU_API_YOU_BASE_URL}?${qs.stringify(vars)}`;
 
     try {
         const page = await browser.newPage();
@@ -126,7 +128,7 @@ app.all("/chat", async (req, res) => {
 
         await page.close();
 
-        if(metadata) data.metaData = vars;
+        if (metadata) data.metaData = vars;
         res.send({
             status: !data.error, data: {
                 ...data,
@@ -203,6 +205,69 @@ app.ws(`/art/ws/:id`, async (ws, req) => {
 app.get("/art/models", async (req, res) => {
     const data = await artClient.getModels({ force: true });
     res.send({ status: true, data })
+});
+
+const TIYARO_BASE_URL = "https://console.tiyaro.ai/explore/openai-whisper-large?q=whisper";
+const TIYARO_API_URL = "https://api.tiyaro.ai";
+const TIYARO_API_PATH = "/v1/ent/openai/1/openai/whisper-large?serviceTier=gpuflex";
+
+let tiyroHeader = null;
+async function fetchTiyaroHeader() {
+    if (tiyroHeader) return tiyroHeader;
+    const page = await browser.newPage();
+    await page.setRequestInterception(true);
+
+    return new Promise(async (resolve, reject) => {
+        page.on("request", async (interceptedRequest) => {
+            const url = interceptedRequest.url();
+            const method = interceptedRequest.method();
+
+            if (url.startsWith(TIYARO_API_URL) && url.includes("whisper-large") && method == "POST") {
+                const headers = interceptedRequest.headers();
+                tiyroHeader = headers;
+                resolve(headers);
+                await page.close();
+            }
+            else interceptedRequest.continue();
+        });
+
+        page.on("close", () => {
+            reject("No headers found")
+        });
+        await page.goto(TIYARO_BASE_URL);
+    });
+}
+
+fetchTiyaroHeader().catch(() => { });
+app.post("/stt", async (req, res) => {
+    const { audio } = req.body;
+    if (!audio) return res.send({ status: false, message: "Invalid body" });
+    try {
+        const headers = await fetchTiyaroHeader();
+        const get = await axios.post(TIYARO_API_URL + TIYARO_API_PATH, {
+            input: {
+                no_speech_threshold: 0.6,
+                patience: 1,
+                suppress_tokens: '-1',
+                compression_ratio_threshold: 2.4,
+                language: 'en',
+                temperature_increment_on_fallback: 0.2,
+                length_penalty: null,
+                logprob_threshold: -1,
+                condition_on_previous_text: true,
+                initial_prompt: null,
+                task: 'transcribe',
+                temperature: 0,
+                beam_size: 5,
+                best_of: 5
+            },
+            Bytes: audio
+        }, { headers });
+        res.send({ status: (get.status === 200) ? true : false, data: get.data });
+    } catch (e) {
+        console.log(e);
+        res.send({ status: false, message: "An error has ocurred" })
+    }
 });
 
 app.listen(3000, () => {
