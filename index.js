@@ -239,7 +239,7 @@ async function fetchTiyaroHeader() {
 }
 
 fetchTiyaroHeader().catch(() => { });
-app.post("/stt", async (req, res) => {
+app.post("/stt/ext", async (req, res) => {
     const { audio } = req.body;
     if (!audio) return res.send({ status: false, message: "Invalid body" });
     try {
@@ -266,6 +266,74 @@ app.post("/stt", async (req, res) => {
         res.send({ status: (get.status === 200) ? true : false, data: get.data });
     } catch (e) {
         console.log(e);
+        res.send({ status: false, message: "An error has ocurred" })
+    }
+});
+
+const STT_API_HOSTS = [
+    "https://abidlabs-whisper-large-v2.hf.space/run/predict",
+    "https://sanchit-gandhi-whisper-large-v2.hf.space/run/predict"
+];
+
+const fetchStt = async function (index = 1, name = `audio_${Date.now()}.wav`, base64, audioType = "audio/wav") {
+    if (index === 0) {
+        const res = await fetch(STT_API_HOSTS[0], {
+            method: "POST",
+            body: JSON.stringify({
+                data: [
+                    {
+                        name: name,
+                        data: `data:${audioType};base64,${base64}`
+                    },
+                    null
+                ]
+            }),
+            headers: {
+                "Content-Type": "application/json"
+            }
+        });
+        const json = await res.json();
+        return {
+            status: res.status === 200 ? true : false, data: {
+                text: json?.data[0]
+            }
+        };
+    }
+    else if (index === 1) {
+        const res = await fetch(STT_API_HOSTS[1], {
+            method: "POST",
+            body: JSON.stringify({
+                data: [
+                    null,
+                    {
+                        name: name,
+                        data: `data:${audioType};base64,${base64}`
+                    },
+                    "transcribe"
+                ]
+            }),
+            headers: {
+                "Content-Type": "application/json"
+            }
+        });
+        const json = await res.json();
+        return {
+            status: res.status === 200 ? true : false, data: {
+                text: json?.data[0]
+            }
+        };
+    }
+}
+
+app.post("/stt", async (req, res) => {
+    const { audio, provider, name, audioType } = req.body;
+    if (!audio) return res.send({ status: false, message: "Invalid body" });
+
+    try {
+        const data = await fetchStt(provider, name, audio, audioType);
+        res.send(data);
+    } catch (e) {
+        console.log(e)
         res.send({ status: false, message: "An error has ocurred" })
     }
 });
