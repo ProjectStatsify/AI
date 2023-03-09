@@ -8,6 +8,7 @@ import StableHorde from "@zeldafan0225/stable_horde";
 import expressWs from "express-ws";
 // import { executablePath } from "puppeteer";
 import axios from "axios";
+import { Text2Speech } from "better-node-gtts";
 
 puppeteer.use(stealth());
 puppeteer.use(useragent());
@@ -334,6 +335,20 @@ app.post("/stt", async (req, res) => {
         res.send(data);
     } catch (e) {
         console.log(e)
+        res.send({ status: false, message: "An error has ocurred" })
+    }
+});
+
+const ttsClient = new Text2Speech("en-US");
+app.get("/tts", async (req, res) => {
+    const { text } = req.query;
+    if (!text) return res.send({ status: false, message: "Invalid payload" });
+    try {
+        res.setHeader("Content-Type", "audio/wav");
+        const stream = await ttsClient.stream(text);
+        stream.pipe(res);
+    } catch (e) {
+        console.log(e);
         res.send({ status: false, message: "An error has ocurred" })
     }
 });
